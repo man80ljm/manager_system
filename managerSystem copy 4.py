@@ -477,10 +477,12 @@ class MainWindow(QMainWindow):
         self.btn_revenue = QPushButton('营收情况')
         self.btn_import = QPushButton('导入Excel')
         self.btn_export = QPushButton('导出Excel')
+        self.btn_export_summary = QPushButton('导出收支明细')  # 新增按钮
         btn_layout.addWidget(self.btn_add)
         btn_layout.addWidget(self.btn_revenue)
         btn_layout.addWidget(self.btn_import)
         btn_layout.addWidget(self.btn_export)
+        btn_layout.addWidget(self.btn_export_summary)  # 添加到布局
         main_layout.addLayout(btn_layout)
 
         central_widget.setLayout(main_layout)
@@ -490,6 +492,7 @@ class MainWindow(QMainWindow):
         self.btn_revenue.clicked.connect(self.show_revenue)
         self.btn_import.clicked.connect(self.import_from_excel)
         self.btn_export.clicked.connect(self.export_to_excel)
+        self.btn_export_summary.clicked.connect(self.export_summary_to_excel)  # 绑定新方法
 
     def update_search_suggestions(self):
         search_text = self.search_input.text().strip()
@@ -650,22 +653,27 @@ class MainWindow(QMainWindow):
 
     def import_from_excel(self):
         from PyQt5.QtWidgets import QFileDialog
+        
+        # 提示用户确认覆盖操作
         reply = QMessageBox.question(self, "确认覆盖", "导入将覆盖现有数据，是否继续？",
                             QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
         if reply == QMessageBox.No:
             return
         
+        # 选择 Excel 文件
         file_path, _ = QFileDialog.getOpenFileName(self, "选择Excel文件", "", "Excel Files (*.xlsx *.xls)")
         if not file_path:
             return
 
         try:
+            # 读取 Excel 文件的所有工作表
             excel_file = pd.ExcelFile(file_path)
             imported_users = 0
             imported_transactions = 0
-            skipped_hyyf = False
-            invalid_usernames = []
+            skipped_hyyf = False  # 专门记录是否跳过了 hyyf
+            invalid_usernames = []  # 记录无效用户名（空用户名）
 
+            # 检查 Excel 文件中的重复用户名
             all_usernames = set()
             duplicate_usernames = set()
             for sheet_name in excel_file.sheet_names:
@@ -675,7 +683,7 @@ class MainWindow(QMainWindow):
                 if all(col in columns for col in ['username']) and len(columns) == 1:
                     for index, row in df.iterrows():
                         username = str(row['username']).strip()
-                        if not username:
+                        if not username:  # 记录空用户名
                             invalid_usernames.append(f"工作表 '{sheet_name}' 第 {index+2} 行")
                             continue
                         if username in all_usernames:
@@ -684,7 +692,7 @@ class MainWindow(QMainWindow):
                             all_usernames.add(username)
                 elif all(col in columns for col in ['时间', '类型', '金额', '类目']):
                     username = sheet_name
-                    if not username:
+                    if not username:  # 工作表名为空（理论上不应该发生，但以防万一）
                         invalid_usernames.append(f"工作表 '{sheet_name}'")
                         continue
                     if username in all_usernames:
@@ -692,44 +700,55 @@ class MainWindow(QMainWindow):
                     else:
                         all_usernames.add(username)
 
+            # 如果有重复用户名，提示用户并停止导入
             if duplicate_usernames:
                 QMessageBox.critical(self, "导入错误", 
                                     f"Excel 文件中存在重复的用户名：{', '.join(duplicate_usernames)}\n"
                                     "请确保所有用户名唯一后再导入！")
                 return
 
+            # 如果有空用户名，提示用户并停止导入
             if invalid_usernames:
                 QMessageBox.critical(self, "导入错误", 
                                     f"Excel 文件中存在空用户名：\n" + "\n".join(invalid_usernames) + "\n"
                                     "请确保所有用户名不为空后再导入！")
                 return
 
+            # 检查是否包含管理员用户 hyyf
             if 'hyyf' in all_usernames:
                 skipped_hyyf = True
 
-            with sqlite3.connect('shop_system.db') as conn:
+            with sqlite3.connect('shop_system.db', detect_types=sqlite3.PARSE_DECLTYPES) as conn:
                 cursor = conn.cursor()
+
+                # 清空数据库
                 cursor.execute("DELETE FROM transactions")
                 cursor.execute("DELETE FROM users")
+
+                # 重置 users 表的自增计数器
                 cursor.execute("DELETE FROM sqlite_sequence WHERE name='users'")
 
+                # 重新插入管理员用户
                 admin_hash = hashlib.sha256("hyyf123".encode()).hexdigest()
                 cursor.execute('''
                     INSERT INTO users (username, password_hash, role, balance)
                     VALUES (?, ?, ?, ?)
                 ''', ('hyyf', admin_hash, 'admin', 0.0))
 
+                # 定义支持的格式
                 user_only_format = ['username']
                 full_transaction_format = ['时间', '类型', '金额', '类目']
 
+                # 遍历所有工作表
                 for sheet_name in excel_file.sheet_names:
                     df = pd.read_excel(file_path, sheet_name=sheet_name)
                     columns = df.columns.tolist()
 
+                    # 检查格式 1：仅用户信息
                     if all(col in columns for col in user_only_format) and len(columns) == 1:
                         for index, row in df.iterrows():
                             username = str(row['username']).strip()
-                            if username == 'hyyf':
+                            if username == 'hyyf':  # 跳过管理员用户
                                 continue
                             
                             password_hash = hashlib.sha256("123456".encode()).hexdigest()
@@ -737,9 +756,10 @@ class MainWindow(QMainWindow):
                                         (username, password_hash))
                             imported_users += 1
 
+                    # 检查格式 2：完整交易记录
                     elif all(col in columns for col in full_transaction_format):
                         username = sheet_name
-                        if username == 'hyyf':
+                        if username == 'hyyf':  # 跳过管理员用户
                             continue
 
                         password_hash = hashlib.sha256("123456".encode()).hexdigest()
@@ -754,6 +774,41 @@ class MainWindow(QMainWindow):
                             amount = float(row['金额'])
                             category = row['类目']
 
+                            # 处理 timestamp，确保它是 datetime 对象
+                            if pd.isna(timestamp):  # 检查空值
+                                QMessageBox.critical(self, "时间为空", f"工作表 '{sheet_name}' 第 {index+2} 行的 '时间' 列为空")
+                                return
+                            elif isinstance(timestamp, pd.Timestamp):
+                                # 直接将 pandas.Timestamp 转换为 datetime
+                                timestamp = timestamp.to_pydatetime()
+                            elif isinstance(timestamp, str):
+                                try:
+                                    # 尝试将字符串解析为 datetime
+                                    timestamp = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S")
+                                except ValueError:
+                                    try:
+                                        # 如果格式不匹配，尝试带毫秒的格式
+                                        timestamp = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S.%f")
+                                    except ValueError as e:
+                                        QMessageBox.critical(self, "时间格式错误", f"工作表 '{sheet_name}' 第 {index+2} 行的时间格式不正确: {timestamp}\n请使用 'YYYY-MM-DD HH:MM:SS' 格式")
+                                        return
+                            elif isinstance(timestamp, (int, float)):
+                                # 如果是 Excel 日期序列号，转换为 datetime
+                                try:
+                                    timestamp = pd.Timestamp("1899-12-30") + pd.Timedelta(days=timestamp)
+                                    timestamp = timestamp.to_pydatetime()
+                                except Exception as e:
+                                    QMessageBox.critical(self, "时间格式错误", f"工作表 '{sheet_name}' 第 {index+2} 行的日期序列号转换失败: {timestamp}")
+                                    return
+                            elif isinstance(timestamp, datetime):
+                                # 如果已经是 datetime 对象，直接使用
+                                pass
+                            else:
+                                # 如果是其他类型，抛出错误
+                                QMessageBox.critical(self, "时间格式错误", f"工作表 '{sheet_name}' 第 {index+2} 行的日期格式不受支持: {timestamp} (类型: {type(timestamp)})")
+                                return
+
+                            # 插入交易记录
                             cursor.execute('''
                                 INSERT INTO transactions (user_id, type, amount, category, timestamp)
                                 VALUES (?, ?, ?, ?, ?)
@@ -777,6 +832,7 @@ class MainWindow(QMainWindow):
                 conn.commit()
 
             self.refresh_users()
+            # 改进提示信息
             if skipped_hyyf:
                 QMessageBox.information(self, "导入完成", 
                                     f"成功导入 {imported_users} 个用户，{imported_transactions} 条交易记录，\n"
@@ -794,7 +850,7 @@ class MainWindow(QMainWindow):
 
     def export_to_excel(self):
         def on_export_finished():
-            QMessageBox.information(self, "完成", "导出成功")
+            QMessageBox.information(self, "完成", "交易记录导出成功")
             self.btn_export.setEnabled(True)
 
         self.btn_export.setEnabled(False)
@@ -805,20 +861,13 @@ class MainWindow(QMainWindow):
 
     def _export_users(self, users, callback):
         try:
-            # 确保 openpyxl 已安装
-            try:
-                from openpyxl import load_workbook, Workbook
-                from openpyxl.utils import get_column_letter
-            except ImportError:
-                QMessageBox.critical(self, "缺少依赖", "缺少 openpyxl 库，请安装：pip install openpyxl")
-                self.btn_export.setEnabled(True)
-                return
+            from openpyxl.utils import get_column_letter
+            print(f"Exporting {len(users)} users")
 
-            # 写入 Excel 文件（交易记录部分）
             with sqlite3.connect('shop_system.db', detect_types=sqlite3.PARSE_DECLTYPES) as conn:
                 with pd.ExcelWriter('交易记录.xlsx', engine='openpyxl') as writer:
-                    # 1. 导出交易记录（原有逻辑）
                     for user_id, username in users:
+                        print(f"Exporting transactions for user: {username}")
                         for chunk in pd.read_sql(
                             f'''SELECT 
                                 timestamp as 时间,
@@ -832,23 +881,51 @@ class MainWindow(QMainWindow):
                         ):
                             chunk.to_excel(writer, sheet_name=username[:30], index=False)
 
-                    # 确保交易记录写入完成
-                    writer.book.save('交易记录.xlsx')
+                    # 调整列宽
+                    workbook = writer.book
+                    for sheet_name in workbook.sheetnames:
+                        sheet = workbook[sheet_name]
+                        for column in sheet.columns:
+                            max_length = 0
+                            column_letter = get_column_letter(column[0].column)
+                            for cell in column:
+                                if cell.value:
+                                    cell_value = str(cell.value)
+                                    length = sum(2 if ord(char) > 127 else 1 for char in cell_value)
+                                    max_length = max(max_length, length)
+                            adjusted_width = max_length + 2
+                            sheet.column_dimensions[column_letter].width = adjusted_width
 
-            # 用 openpyxl 打开文件，添加“收支明细”工作表
-            workbook = load_workbook('交易记录.xlsx')
-            
-            # 创建“收支明细”工作表
-            if '收支明细' in workbook.sheetnames:
-                del workbook['收支明细']  # 如果已存在，先删除
-            summary_sheet = workbook.create_sheet('收支明细')
+            print("Transaction export completed")
+            callback()
 
-            # 写入表头
-            headers = ['姓名', '充值', '消费', '余额']
-            for col, header in enumerate(headers, 1):
-                summary_sheet.cell(row=1, column=col).value = header
+        except PermissionError:
+            print("PermissionError: 无法写入文件")
+            QMessageBox.critical(self, "导出错误", "无法导出，请关闭‘交易记录.xlsx’文件后再试！")
+            self.btn_export.setEnabled(True)
+        except Exception as e:
+            print(f"Export error: {str(e)}")
+            QMessageBox.critical(self, "导出错误", f"导出失败: {str(e)}")
+            self.btn_export.setEnabled(True)
 
-            # 收集数据
+    def export_summary_to_excel(self):
+        def on_export_summary_finished():
+            QMessageBox.information(self, "完成", "收支明细导出成功")
+            self.btn_export_summary.setEnabled(True)
+
+        self.btn_export_summary.setEnabled(False)
+        self.export_summary_thread = AsyncLoader("SELECT id, username FROM users")
+        self.export_summary_thread.finished.connect(
+            lambda users: self._export_summary(users, on_export_summary_finished))
+        self.export_summary_thread.start()
+
+    def _export_summary(self, users, callback):
+        try:
+            from openpyxl.utils import get_column_letter
+            from openpyxl.styles import PatternFill, Alignment, Border, Side  # 引入 Border 和 Side 用于设置边框
+            print(f"Exporting summary for {len(users)} users")
+
+            # 准备收支明细数据
             with sqlite3.connect('shop_system.db', detect_types=sqlite3.PARSE_DECLTYPES) as conn:
                 cursor = conn.cursor()
                 data = []
@@ -861,67 +938,101 @@ class MainWindow(QMainWindow):
                     balance = cursor.fetchone()[0] or 0.0
                     data.append([username, total_topup, total_consumption, balance])
 
-            # 如果没有数据，添加占位行
+            # 调试：打印 data 内容，确认是否有数据
+            print(f"Data for summary: {data}")
+
+            # 创建收支明细 DataFrame，添加“序号”列
             if not data:
                 data = [['无数据', 0.0, 0.0, 0.0]]
+            # 为每个用户添加序号
+            numbered_data = [[i + 1] + row for i, row in enumerate(data)]
+            summary_df = pd.DataFrame(numbered_data, columns=['序号', '姓名', '充值', '消费', '余额'])
 
-            # 写入用户数据
-            for row_idx, row_data in enumerate(data, 2):  # 从第2行开始（第1行是表头）
-                for col_idx, value in enumerate(row_data, 1):
-                    if isinstance(value, float):
-                        summary_sheet.cell(row=row_idx, column=col_idx).value = round(value, 2)
-                    else:
-                        summary_sheet.cell(row=row_idx, column=col_idx).value = value
-
-            # 计算统计数据并写入
+            # 计算总计
             total_topup_sum = sum(row[1] for row in data if row[0] != '无数据')
             total_consumption_sum = sum(row[2] for row in data if row[0] != '无数据')
             total_balance_sum = sum(row[3] for row in data if row[0] != '无数据')
+            # 调试：打印总计值，确认计算结果
+            print(f"Total topup: {total_topup_sum}, Total consumption: {total_consumption_sum}, Total balance: {total_balance_sum}")
 
-            # 写入统计行
-            start_row = len(data) + 2  # 在数据后空一行
-            summary_sheet.cell(row=start_row, column=1).value = '总充值'
-            summary_sheet.cell(row=start_row, column=2).value = round(total_topup_sum, 2)
-            summary_sheet.cell(row=start_row + 1, column=1).value = '总消费'
-            summary_sheet.cell(row=start_row + 1, column=3).value = round(total_consumption_sum, 2)
-            summary_sheet.cell(row=start_row + 2, column=1).value = '总余额'
-            summary_sheet.cell(row=start_row + 2, column=4).value = round(total_balance_sum, 2)
+            # 如果总计值全为 0，说明没有交易记录，添加提示
+            if total_topup_sum == 0 and total_consumption_sum == 0 and total_balance_sum == 0:
+                print("No transactions found for summary.")
 
-            # 调整所有工作表的列宽
-            for sheet_name in workbook.sheetnames:
-                sheet = workbook[sheet_name]
+            # 总计行：将“总充值”等放在 B 列，计算值放在 C 列，D、E 列为空
+            total_row1 = ['', '总充值', total_topup_sum, '', '']
+            total_row2 = ['', '总消费', total_consumption_sum, '', '']
+            total_row3 = ['', '总余额', total_balance_sum, '', '']
+            total_df = pd.DataFrame([total_row1, total_row2, total_row3], columns=['序号', '姓名', '充值', '消费', '余额'])
+
+            # 写入收支明细到单独的 Excel 文件
+            with pd.ExcelWriter('收支明细.xlsx', engine='openpyxl') as writer:
+                # 写入用户数据，空两行后写入总计
+                summary_df.to_excel(writer, sheet_name='收支明细', index=False, startrow=0)
+                # 设置 header=False，避免重复写入列标题
+                total_df.to_excel(writer, sheet_name='收支明细', index=False, header=False, startrow=len(summary_df) + 2)
+
+                # 获取工作簿和工作表
+                workbook = writer.book
+                sheet = workbook['收支明细']
+
+                # 设置“序号”列（A 列）居中
+                for row in range(1, len(summary_df) + 6):  # 覆盖标题行、用户数据行和总计行
+                    cell = sheet.cell(row=row, column=1)  # A 列
+                    cell.alignment = Alignment(horizontal='center', vertical='center')
+
+                # 设置所有计算值（C、D、E 列）居中
+                for row in range(1, len(summary_df) + 2):  # 覆盖标题行和用户数据行
+                    for col in range(3, 6):  # C、D、E 列（3到5）
+                        cell = sheet.cell(row=row, column=col)
+                        cell.alignment = Alignment(horizontal='center', vertical='center')
+
+                # 设置总计行的计算值（C、D、E 列合并后居中）
+                for row in range(len(summary_df) + 3, len(summary_df) + 6):  # 总计行的范围
+                    # 合并 C、D、E 列
+                    sheet.merge_cells(start_row=row, start_column=3, end_row=row, end_column=5)  # 合并 C、D、E 列
+                    # 设置合并后的单元格居中
+                    cell = sheet.cell(row=row, column=3)  # C 列（合并后的起始列）
+                    cell.alignment = Alignment(horizontal='center', vertical='center')
+
+                # 每隔一行填充浅灰色背景（从第2行开始，第1行是标题行）
+                fill = PatternFill(start_color="E6E6E6", end_color="E6E6E6", fill_type="solid")  # 浅灰色
+                for row in range(2, len(summary_df) + 2):  # 从第2行（数据行）开始
+                    if (row - 2) % 2 == 1:  # 每隔一行（奇数行）
+                        for col in range(1, 6):  # A到E列（1到5）
+                            cell = sheet.cell(row=row, column=col)
+                            cell.fill = fill
+
+                # 为所有单元格添加边框
+                thin_border = Border(
+                    left=Side(style='thin'),
+                    right=Side(style='thin'),
+                    top=Side(style='thin'),
+                    bottom=Side(style='thin')
+                )
+                for row in range(1, len(summary_df) + 6):  # 覆盖标题行、用户数据行和总计行
+                    for col in range(1, 6):  # A到E列（1到5）
+                        cell = sheet.cell(row=row, column=col)
+                        cell.border = thin_border
+
+                # 调整列宽，直接设置为目标值，不受内容长度影响
+                column_widths = {'A': 5.5, 'B': 40, 'C': 13, 'D': 13, 'E': 13}  # 总宽度 5.5+40+13+13+13=84.5
                 for column in sheet.columns:
-                    max_length = 0
                     column_letter = get_column_letter(column[0].column)
-                    for cell in column:
-                        try:
-                            if cell.value:
-                                cell_value = str(cell.value)
-                                length = 0
-                                for char in cell_value:
-                                    if ord(char) > 127:  # 中文字符
-                                        length += 2
-                                    else:
-                                        length += 1
-                                max_length = max(max_length, length)
-                        except:
-                            pass
-                    if sheet_name == '收支明细':
-                        adjusted_width = min(max(max_length + 2, 20), 25)  # 每列20-25字符
-                    else:
-                        adjusted_width = max_length + 2
-                    sheet.column_dimensions[column_letter].width = adjusted_width
+                    # 直接设置目标宽度
+                    sheet.column_dimensions[column_letter].width = column_widths[column_letter]
 
-            # 保存文件
-            workbook.save('交易记录.xlsx')
+            print("Summary export completed")
             callback()
 
         except PermissionError:
-            QMessageBox.critical(self, "导出错误", "无法导出，请关闭‘交易记录.xlsx’文件后再试！")
-            self.btn_export.setEnabled(True)
+            print("PermissionError: 无法写入文件")
+            QMessageBox.critical(self, "导出错误", "无法导出，请关闭‘收支明细.xlsx’文件后再试！")
+            self.btn_export_summary.setEnabled(True)
         except Exception as e:
+            print(f"Summary export error: {str(e)}")
             QMessageBox.critical(self, "导出错误", f"导出失败: {str(e)}")
-            self.btn_export.setEnabled(True)
+            self.btn_export_summary.setEnabled(True)
 
     def calculate_revenue(self):
         with sqlite3.connect('shop_system.db') as conn:
