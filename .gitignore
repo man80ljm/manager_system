@@ -1,0 +1,19 @@
+# 忽略虚拟环境目录
+venv/
+
+# 忽略 Python 缓存文件和目录
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# 忽略其他常见的缓存文件和目录
+.cache/
+*.cache
+*.bak
+*.tmp
+*.swp
+
+# 忽略 IDE 或编辑器生成的缓存（可选）
+.vscode/
+.idea/

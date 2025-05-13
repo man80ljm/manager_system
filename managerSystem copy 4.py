@@ -6,11 +6,10 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QHBoxLayout, QPushButton, QLabel, QScrollArea,
                              QLineEdit, QDialog, QMessageBox, QFormLayout,
                              QInputDialog, QTableWidget, QTableWidgetItem, 
-                             QCheckBox,QListWidget,QListWidgetItem)
+                             QCheckBox, QListWidget, QListWidgetItem)
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QSettings, QTimer
 from PyQt5.QtGui import QIcon
 import hashlib
-from datetime import datetime
 
 # 注册 sqlite3 的 datetime 适配器和转换器
 def adapt_datetime(dt):
@@ -19,10 +18,8 @@ def adapt_datetime(dt):
 def convert_datetime(s):
     s = s.decode('utf-8') if isinstance(s, bytes) else s
     try:
-        # 尝试解析不含微秒的格式
         return datetime.strptime(s, "%Y-%m-%d %H:%M:%S")
     except ValueError:
-        # 如果失败，尝试解析含微秒的格式
         return datetime.strptime(s, "%Y-%m-%d %H:%M:%S.%f")
 
 sqlite3.register_adapter(datetime, adapt_datetime)
@@ -86,7 +83,6 @@ class LoginWindow(QDialog):
 
     def __init__(self):
         super().__init__()
-        # 设置窗口标志，移除帮助按钮
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
         self.setWindowTitle("安全登录")
         self.setFixedSize(550, 450)
@@ -97,28 +93,23 @@ class LoginWindow(QDialog):
         self.load_saved_credentials()
 
     def init_ui(self):
-        main_layout = QVBoxLayout()  # 直接使用 QVBoxLayout 作为主布局
-
+        main_layout = QVBoxLayout()
         title = QLabel('用户消费记账系统')
         title.setStyleSheet('font-size: 36px; font-weight: bold;')
         main_layout.addWidget(title)
 
-        # 用户名输入
         self.username_input = QLineEdit()
         main_layout.addWidget(QLabel("用户名:"))
         main_layout.addWidget(self.username_input)
 
-        # 密码输入
         self.password_input = QLineEdit()
         self.password_input.setEchoMode(QLineEdit.Password)
         main_layout.addWidget(QLabel("密码:"))
         main_layout.addWidget(self.password_input)
 
-        # 记住我选项
         self.remember_check = QCheckBox("记住我")
         main_layout.addWidget(self.remember_check)
 
-        # 按钮布局
         btn_layout = QHBoxLayout()
         self.btn_login = QPushButton('登录')
         self.btn_login.clicked.connect(self.attempt_login)
@@ -129,11 +120,7 @@ class LoginWindow(QDialog):
         btn_layout.addWidget(self.btn_reset)
 
         main_layout.addLayout(btn_layout)
-
-        # 将布局直接设置为对话框的布局
         self.setLayout(main_layout)
-
-        
 
     def load_saved_credentials(self):
         username = self.settings.value("username", "")
@@ -229,7 +216,6 @@ class LoginWindow(QDialog):
         if ok and email:
             QMessageBox.information(self, "已发送", "重置链接已发送到您的邮箱（模拟）")
 
-
 class AsyncLoader(QThread):
     finished = pyqtSignal(list)
     error = pyqtSignal(str)
@@ -261,7 +247,6 @@ class AddUserDialog(QDialog):
         self.setLayout(layout)
 
 class DetailWindow(QWidget):
-    # 定义信号，用于通知主窗口刷新
     balance_updated = pyqtSignal()
 
     def __init__(self, user_id, parent=None):
@@ -270,14 +255,13 @@ class DetailWindow(QWidget):
         self.user_id = user_id
         self.parent = parent
 
-        # 检查是否为 hyyf
         with sqlite3.connect('shop_system.db') as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT username FROM users WHERE id=?", (self.user_id,))
             username = cursor.fetchone()[0]
             if username == 'hyyf':
                 QMessageBox.information(self, "提示", "超级管理员！")
-                self.close()  # 关闭详情窗口
+                self.close()
                 return
 
         self.init_ui()
@@ -305,9 +289,7 @@ class DetailWindow(QWidget):
         layout.addWidget(self.lbl_summary)
 
         self.setLayout(layout)
-
-        # 或者设置最小尺寸
-        self.setMinimumSize(1250, 600)  # 设置最小宽度为 1250 像素，高度为 600 像素
+        self.setMinimumSize(1250, 600)
 
         self.btn_topup.clicked.connect(self.on_topup_clicked)
         self.btn_consume.clicked.connect(self.on_consume_clicked)
@@ -332,9 +314,7 @@ class DetailWindow(QWidget):
 
             self.table.setRowCount(len(transactions))
             for row, (timestamp, trans_type, amount, category) in enumerate(transactions):
-                # timestamp 现在是 datetime 对象，直接格式化
                 formatted_timestamp = timestamp.strftime("%Y-%m-%d %H:%M:%S")
-                # 创建并设置居中的表格项
                 time_item = QTableWidgetItem(formatted_timestamp)
                 time_item.setTextAlignment(Qt.AlignCenter)
                 self.table.setItem(row, 0, time_item)
@@ -351,14 +331,10 @@ class DetailWindow(QWidget):
                 category_item.setTextAlignment(Qt.AlignCenter)
                 self.table.setItem(row, 3, category_item)
 
-            # 自动调整列宽以适应内容
             self.table.resizeColumnsToContents()
-
-            # 为每列增加额外的宽度（模拟 2 个字符的间距）
             font_metrics = self.table.fontMetrics()
-            char_width = font_metrics.averageCharWidth()  # 获取单个字符的平均宽度
-            extra_padding = char_width * 12  # 两边各 2 个字符宽度（左右共 4 个字符）
-
+            char_width = font_metrics.averageCharWidth()
+            extra_padding = char_width * 12
             for col in range(self.table.columnCount()):
                 current_width = self.table.columnWidth(col)
                 self.table.setColumnWidth(col, current_width + extra_padding)
@@ -405,7 +381,6 @@ class DetailWindow(QWidget):
                     QMessageBox.warning(self, "余额不足", f"当前余额: ¥{balance:.2f}，不足以支付 ¥{amount:.2f}")
                     return
                 cursor.execute("UPDATE users SET balance = balance - ? WHERE id=?", (amount, self.user_id))
-            # 去掉微秒
             timestamp = datetime.now().replace(microsecond=0)
             cursor.execute('''
                 INSERT INTO transactions (user_id, type, amount, category, timestamp)
@@ -421,14 +396,13 @@ class MainWindow(QMainWindow):
         self.current_page = 1
         self.init_ui()
         self.refresh_users()
-    #搜索用户
+
     def search_user(self):
         search_text = self.search_input.text().strip()
         if not search_text:
             QMessageBox.warning(self, "输入错误", "请输入用户名或ID")
             return
 
-        # 查询数据库
         with sqlite3.connect('shop_system.db') as conn:
             cursor = conn.cursor()
             query = '''
@@ -445,9 +419,9 @@ class MainWindow(QMainWindow):
 
             if result:
                 user_id = result[0]
-                self.search_input.clear()  # 清空搜索框
-                self.suggestion_list.hide()  # 隐藏建议列表
-                self.show_detail(user_id)  # 打开用户详情
+                self.search_input.clear()
+                self.suggestion_list.hide()
+                self.show_detail(user_id)
             else:
                 QMessageBox.warning(self, "无此用户", f"未找到用户: {search_text}")
 
@@ -455,34 +429,29 @@ class MainWindow(QMainWindow):
         central_widget = QWidget()
         main_layout = QVBoxLayout()
 
-        # 顶部布局：标题 + 搜索框
         top_layout = QHBoxLayout()
         title = QLabel('用户消费记账系统')
         title.setStyleSheet('font-size: 30px; font-weight: bold;')
         top_layout.addWidget(title)
 
-        # 添加搜索框
-        top_layout.addStretch()  # 左侧填充空白，将搜索框推到右边
+        top_layout.addStretch()
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("输入用户名或ID搜索")
-        self.search_input.setFixedWidth(300)  # 设置搜索框宽度
+        self.search_input.setFixedWidth(300)
         self.search_input.setStyleSheet("border: 1px solid gray; border-radius: 5px; padding: 2px;")
-        self.search_input.textChanged.connect(self.update_search_suggestions)  # 文本变化时更新建议
+        self.search_input.textChanged.connect(self.update_search_suggestions)
         top_layout.addWidget(self.search_input)
 
-        # 搜索按钮（可选，保留以支持回车搜索）
         self.btn_search = QPushButton('搜索')
-        self.btn_search.clicked.connect(self.search_user)  # 搜索按钮触发搜索
+        self.btn_search.clicked.connect(self.search_user)
         top_layout.addWidget(self.btn_search)
 
         main_layout.addLayout(top_layout)
 
-        # 添加建议列表（初始隐藏）
         self.suggestion_list = QListWidget()
-        self.suggestion_list.setFixedWidth(600)  # 与搜索框宽度一致
-        self.suggestion_list.hide()  # 初始隐藏
-        self.suggestion_list.itemClicked.connect(self.on_suggestion_clicked)  # 点击建议项时跳转
-        # 添加样式
+        self.suggestion_list.setFixedWidth(600)
+        self.suggestion_list.hide()
+        self.suggestion_list.itemClicked.connect(self.on_suggestion_clicked)
         self.suggestion_list.setStyleSheet("""
             QListWidget {
                 border: 1px solid gray;
@@ -492,10 +461,9 @@ class MainWindow(QMainWindow):
                 background-color: #e0e0e0;
             }
         """)
-        self.suggestion_list.setMaximumHeight(150)  # 限制高度为 150 像素
+        self.suggestion_list.setMaximumHeight(150)
         main_layout.addWidget(self.suggestion_list)
 
-        # 其余布局保持不变
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
         self.user_container = QWidget()
@@ -522,17 +490,13 @@ class MainWindow(QMainWindow):
         self.btn_revenue.clicked.connect(self.show_revenue)
         self.btn_import.clicked.connect(self.import_from_excel)
         self.btn_export.clicked.connect(self.export_to_excel)
-    
-    #用户输入时实时查询数据库
+
     def update_search_suggestions(self):
         search_text = self.search_input.text().strip()
-        
-        # 如果输入为空，隐藏建议列表
         if not search_text:
             self.suggestion_list.hide()
             return
 
-        # 查询数据库，模糊匹配用户
         with sqlite3.connect('shop_system.db') as conn:
             cursor = conn.cursor()
             query = '''
@@ -547,43 +511,35 @@ class MainWindow(QMainWindow):
                 cursor.execute(query, (-1, f'%{search_text}%'))
                 results = cursor.fetchall()
 
-        # 清空建议列表
         self.suggestion_list.clear()
-
-        # 如果有匹配结果，显示建议列表
         if results:
             self.suggestion_list.show()
             for user_id, username in results:
                 item = QListWidgetItem(f"{username} (ID: {user_id})")
-                item.setData(Qt.UserRole, user_id)  # 存储 user_id 在 item 中
+                item.setData(Qt.UserRole, user_id)
                 self.suggestion_list.addItem(item)
         else:
             self.suggestion_list.hide()
-    
-    #用户点击建议列表中的某一项    
+
     def on_suggestion_clicked(self, item):
-        user_id = item.data(Qt.UserRole)  # 获取存储的 user_id
-        self.search_input.clear()  # 清空搜索框
-        self.suggestion_list.hide()  # 隐藏建议列表
-        self.show_detail(user_id)  # 打开用户详情
+        user_id = item.data(Qt.UserRole)
+        self.search_input.clear()
+        self.suggestion_list.hide()
+        self.show_detail(user_id)
 
     def refresh_users(self, page=1):
-        # 确保 page 不小于 1
         page = max(1, page)
-        self.current_page = page  # 保存当前页码
-        # 彻底清理布局中的所有控件
+        self.current_page = page
         while self.user_layout.count() > 0:
-            item = self.user_layout.takeAt(0)  # 移除布局中的第一个项
+            item = self.user_layout.takeAt(0)
             widget = item.widget()
             if widget:
-                widget.deleteLater()  # 异步删除控件
-            del item  # 删除布局项
+                widget.deleteLater()
+            del item
 
-        # 添加加载中的提示
         loading = QLabel("加载中...")
         self.user_layout.addWidget(loading)
 
-        # 异步加载用户数据
         self.loader = AsyncLoader('''
             SELECT id, username, balance FROM users 
             ORDER BY id LIMIT 10 OFFSET ?
@@ -593,7 +549,6 @@ class MainWindow(QMainWindow):
         self.loader.start()
 
     def update_users(self, page, users):
-        # 彻底清理布局中的所有控件（包括 "加载中..."）
         while self.user_layout.count() > 0:
             item = self.user_layout.takeAt(0)
             widget = item.widget()
@@ -601,7 +556,6 @@ class MainWindow(QMainWindow):
                 widget.deleteLater()
             del item
 
-        # 添加用户条目
         for user_id, username, balance in users:
             item = QWidget()
             layout = QHBoxLayout()
@@ -615,66 +569,49 @@ class MainWindow(QMainWindow):
             item.setLayout(layout)
             self.user_layout.addWidget(item)
 
-        # 添加分页导航
         nav = QWidget()
         nav_layout = QHBoxLayout()
-
-        # 上一页按钮
         btn_prev = QPushButton("上一页")
         btn_prev.setEnabled(page > 1)
         btn_prev.clicked.connect(lambda: self.refresh_users(page - 1))
         nav_layout.addWidget(btn_prev)
 
-        # 添加伸缩空间，确保输入框居中
         nav_layout.addStretch()
-
-        # 页码输入框和总页数标签的子布局（保持紧凑）
         page_layout = QHBoxLayout()
         page_input = QLineEdit()
-        page_input.setText(str(page))  # 显示当前页码
-        page_input.setFixedWidth(50)  # 设置输入框宽度
-        page_input.setAlignment(Qt.AlignCenter)  # 居中对齐
+        page_input.setText(str(page))
+        page_input.setFixedWidth(50)
+        page_input.setAlignment(Qt.AlignCenter)
         page_layout.addWidget(page_input)
-        page_layout.addWidget(QLabel(f"/ {self.get_max_pages()} 页"))  # 显示总页数
-
-        # 将页码子布局添加到主布局
+        page_layout.addWidget(QLabel(f"/ {self.get_max_pages()} 页"))
         nav_layout.addLayout(page_layout)
-
-        # 添加伸缩空间，确保输入框居中
         nav_layout.addStretch()
 
-        # 下一页按钮
         btn_next = QPushButton("下一页")
         btn_next.clicked.connect(lambda: self.refresh_users(page + 1))
         nav_layout.addWidget(btn_next)
 
-        # 将布局设置为导航控件
         nav.setLayout(nav_layout)
         self.user_layout.addWidget(nav)
 
-        # 检查是否有下一页并动态启用/禁用下一页按钮
         self.count_loader = AsyncLoader("SELECT COUNT(*) FROM users")
         self.count_loader.finished.connect(
             lambda data: btn_next.setEnabled(page * 10 < data[0][0]))
         self.count_loader.start()
 
-        # 连接页码输入框的回车事件
         page_input.returnPressed.connect(lambda: self.jump_to_page(page_input.text()))
 
     def get_max_pages(self):
-        """计算最大页数"""
         with sqlite3.connect('shop_system.db') as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT COUNT(*) FROM users")
             total_users = cursor.fetchone()[0]
-        return (total_users + 9) // 10  # 每页 10 个用户，向上取整
+        return (total_users + 9) // 10
 
     def jump_to_page(self, input_text):
-        """处理页码跳转"""
         try:
             target_page = int(input_text)
             max_pages = self.get_max_pages()
-            
             if 1 <= target_page <= max_pages:
                 self.refresh_users(target_page)
             else:
@@ -684,7 +621,6 @@ class MainWindow(QMainWindow):
 
     def show_detail(self, user_id):
         self.detail_window = DetailWindow(user_id, self)
-        # 连接子窗口的信号到主窗口的刷新方法
         self.detail_window.balance_updated.connect(lambda: self.refresh_users(self.current_page))
         self.detail_window.show()
 
@@ -708,35 +644,28 @@ class MainWindow(QMainWindow):
                     cursor.execute('INSERT INTO users (username, password_hash) VALUES (?, ?)', 
                                 (username, password_hash))
                     conn.commit()
-                    self.refresh_users()  # 刷新用户列表
-                    #移除这条代码
-                    #QMessageBox.information(self, "成功", "用户添加成功，默认密码为123456")
+                    self.refresh_users()
                 except sqlite3.Error as e:
                     QMessageBox.critical(self, "错误", f"添加用户失败: {str(e)}")
-    
+
     def import_from_excel(self):
         from PyQt5.QtWidgets import QFileDialog
-        
-        # 提示用户确认覆盖操作
         reply = QMessageBox.question(self, "确认覆盖", "导入将覆盖现有数据，是否继续？",
                             QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
         if reply == QMessageBox.No:
             return
         
-        # 选择 Excel 文件
         file_path, _ = QFileDialog.getOpenFileName(self, "选择Excel文件", "", "Excel Files (*.xlsx *.xls)")
         if not file_path:
             return
 
         try:
-            # 读取 Excel 文件的所有工作表
             excel_file = pd.ExcelFile(file_path)
             imported_users = 0
             imported_transactions = 0
-            skipped_hyyf = False  # 专门记录是否跳过了 hyyf
-            invalid_usernames = []  # 记录无效用户名（空用户名）
+            skipped_hyyf = False
+            invalid_usernames = []
 
-            # 检查 Excel 文件中的重复用户名
             all_usernames = set()
             duplicate_usernames = set()
             for sheet_name in excel_file.sheet_names:
@@ -746,7 +675,7 @@ class MainWindow(QMainWindow):
                 if all(col in columns for col in ['username']) and len(columns) == 1:
                     for index, row in df.iterrows():
                         username = str(row['username']).strip()
-                        if not username:  # 记录空用户名
+                        if not username:
                             invalid_usernames.append(f"工作表 '{sheet_name}' 第 {index+2} 行")
                             continue
                         if username in all_usernames:
@@ -755,7 +684,7 @@ class MainWindow(QMainWindow):
                             all_usernames.add(username)
                 elif all(col in columns for col in ['时间', '类型', '金额', '类目']):
                     username = sheet_name
-                    if not username:  # 工作表名为空（理论上不应该发生，但以防万一）
+                    if not username:
                         invalid_usernames.append(f"工作表 '{sheet_name}'")
                         continue
                     if username in all_usernames:
@@ -763,55 +692,44 @@ class MainWindow(QMainWindow):
                     else:
                         all_usernames.add(username)
 
-            # 如果有重复用户名，提示用户并停止导入
             if duplicate_usernames:
                 QMessageBox.critical(self, "导入错误", 
                                     f"Excel 文件中存在重复的用户名：{', '.join(duplicate_usernames)}\n"
                                     "请确保所有用户名唯一后再导入！")
                 return
 
-            # 如果有空用户名，提示用户并停止导入
             if invalid_usernames:
                 QMessageBox.critical(self, "导入错误", 
                                     f"Excel 文件中存在空用户名：\n" + "\n".join(invalid_usernames) + "\n"
                                     "请确保所有用户名不为空后再导入！")
                 return
 
-            # 检查是否包含管理员用户 hyyf
             if 'hyyf' in all_usernames:
                 skipped_hyyf = True
 
             with sqlite3.connect('shop_system.db') as conn:
                 cursor = conn.cursor()
-
-                # 清空数据库
                 cursor.execute("DELETE FROM transactions")
                 cursor.execute("DELETE FROM users")
-
-                # 重置 users 表的自增计数器
                 cursor.execute("DELETE FROM sqlite_sequence WHERE name='users'")
 
-                # 重新插入管理员用户
                 admin_hash = hashlib.sha256("hyyf123".encode()).hexdigest()
                 cursor.execute('''
                     INSERT INTO users (username, password_hash, role, balance)
                     VALUES (?, ?, ?, ?)
                 ''', ('hyyf', admin_hash, 'admin', 0.0))
 
-                # 定义支持的格式
                 user_only_format = ['username']
                 full_transaction_format = ['时间', '类型', '金额', '类目']
 
-                # 遍历所有工作表
                 for sheet_name in excel_file.sheet_names:
                     df = pd.read_excel(file_path, sheet_name=sheet_name)
                     columns = df.columns.tolist()
 
-                    # 检查格式 1：仅用户信息
                     if all(col in columns for col in user_only_format) and len(columns) == 1:
                         for index, row in df.iterrows():
                             username = str(row['username']).strip()
-                            if username == 'hyyf':  # 跳过管理员用户
+                            if username == 'hyyf':
                                 continue
                             
                             password_hash = hashlib.sha256("123456".encode()).hexdigest()
@@ -819,10 +737,9 @@ class MainWindow(QMainWindow):
                                         (username, password_hash))
                             imported_users += 1
 
-                    # 检查格式 2：完整交易记录
                     elif all(col in columns for col in full_transaction_format):
                         username = sheet_name
-                        if username == 'hyyf':  # 跳过管理员用户
+                        if username == 'hyyf':
                             continue
 
                         password_hash = hashlib.sha256("123456".encode()).hexdigest()
@@ -860,7 +777,6 @@ class MainWindow(QMainWindow):
                 conn.commit()
 
             self.refresh_users()
-            # 改进提示信息
             if skipped_hyyf:
                 QMessageBox.information(self, "导入完成", 
                                     f"成功导入 {imported_users} 个用户，{imported_transactions} 条交易记录，\n"
@@ -879,7 +795,7 @@ class MainWindow(QMainWindow):
     def export_to_excel(self):
         def on_export_finished():
             QMessageBox.information(self, "完成", "导出成功")
-            self.btn_export.setEnabled(True)  # 成功时启用按钮
+            self.btn_export.setEnabled(True)
 
         self.btn_export.setEnabled(False)
         self.export_thread = AsyncLoader("SELECT id, username FROM users")
@@ -891,16 +807,17 @@ class MainWindow(QMainWindow):
         try:
             # 确保 openpyxl 已安装
             try:
-                from openpyxl import load_workbook
+                from openpyxl import load_workbook, Workbook
                 from openpyxl.utils import get_column_letter
             except ImportError:
                 QMessageBox.critical(self, "缺少依赖", "缺少 openpyxl 库，请安装：pip install openpyxl")
                 self.btn_export.setEnabled(True)
                 return
 
-            # 写入 Excel 文件
-            with sqlite3.connect('shop_system.db') as conn:
+            # 写入 Excel 文件（交易记录部分）
+            with sqlite3.connect('shop_system.db', detect_types=sqlite3.PARSE_DECLTYPES) as conn:
                 with pd.ExcelWriter('交易记录.xlsx', engine='openpyxl') as writer:
+                    # 1. 导出交易记录（原有逻辑）
                     for user_id, username in users:
                         for chunk in pd.read_sql(
                             f'''SELECT 
@@ -915,8 +832,62 @@ class MainWindow(QMainWindow):
                         ):
                             chunk.to_excel(writer, sheet_name=username[:30], index=False)
 
-            # 打开 Excel 文件并调整列宽
+                    # 确保交易记录写入完成
+                    writer.book.save('交易记录.xlsx')
+
+            # 用 openpyxl 打开文件，添加“收支明细”工作表
             workbook = load_workbook('交易记录.xlsx')
+            
+            # 创建“收支明细”工作表
+            if '收支明细' in workbook.sheetnames:
+                del workbook['收支明细']  # 如果已存在，先删除
+            summary_sheet = workbook.create_sheet('收支明细')
+
+            # 写入表头
+            headers = ['姓名', '充值', '消费', '余额']
+            for col, header in enumerate(headers, 1):
+                summary_sheet.cell(row=1, column=col).value = header
+
+            # 收集数据
+            with sqlite3.connect('shop_system.db', detect_types=sqlite3.PARSE_DECLTYPES) as conn:
+                cursor = conn.cursor()
+                data = []
+                for user_id, username in users:
+                    cursor.execute("SELECT SUM(amount) FROM transactions WHERE user_id=? AND type='topup'", (user_id,))
+                    total_topup = cursor.fetchone()[0] or 0.0
+                    cursor.execute("SELECT SUM(amount) FROM transactions WHERE user_id=? AND type='consumption'", (user_id,))
+                    total_consumption = cursor.fetchone()[0] or 0.0
+                    cursor.execute("SELECT balance FROM users WHERE id=?", (user_id,))
+                    balance = cursor.fetchone()[0] or 0.0
+                    data.append([username, total_topup, total_consumption, balance])
+
+            # 如果没有数据，添加占位行
+            if not data:
+                data = [['无数据', 0.0, 0.0, 0.0]]
+
+            # 写入用户数据
+            for row_idx, row_data in enumerate(data, 2):  # 从第2行开始（第1行是表头）
+                for col_idx, value in enumerate(row_data, 1):
+                    if isinstance(value, float):
+                        summary_sheet.cell(row=row_idx, column=col_idx).value = round(value, 2)
+                    else:
+                        summary_sheet.cell(row=row_idx, column=col_idx).value = value
+
+            # 计算统计数据并写入
+            total_topup_sum = sum(row[1] for row in data if row[0] != '无数据')
+            total_consumption_sum = sum(row[2] for row in data if row[0] != '无数据')
+            total_balance_sum = sum(row[3] for row in data if row[0] != '无数据')
+
+            # 写入统计行
+            start_row = len(data) + 2  # 在数据后空一行
+            summary_sheet.cell(row=start_row, column=1).value = '总充值'
+            summary_sheet.cell(row=start_row, column=2).value = round(total_topup_sum, 2)
+            summary_sheet.cell(row=start_row + 1, column=1).value = '总消费'
+            summary_sheet.cell(row=start_row + 1, column=3).value = round(total_consumption_sum, 2)
+            summary_sheet.cell(row=start_row + 2, column=1).value = '总余额'
+            summary_sheet.cell(row=start_row + 2, column=4).value = round(total_balance_sum, 2)
+
+            # 调整所有工作表的列宽
             for sheet_name in workbook.sheetnames:
                 sheet = workbook[sheet_name]
                 for column in sheet.columns:
@@ -928,25 +899,30 @@ class MainWindow(QMainWindow):
                                 cell_value = str(cell.value)
                                 length = 0
                                 for char in cell_value:
-                                    if ord(char) > 127:
+                                    if ord(char) > 127:  # 中文字符
                                         length += 2
                                     else:
                                         length += 1
                                 max_length = max(max_length, length)
                         except:
                             pass
-                    adjusted_width = max_length + 2
+                    if sheet_name == '收支明细':
+                        adjusted_width = min(max(max_length + 2, 20), 25)  # 每列20-25字符
+                    else:
+                        adjusted_width = max_length + 2
                     sheet.column_dimensions[column_letter].width = adjusted_width
 
+            # 保存文件
             workbook.save('交易记录.xlsx')
             callback()
+
         except PermissionError:
-            QMessageBox.critical(self, "导出错误", "无法导出，请关闭原表格再导出Excel")
-        except Exception as e:
-            QMessageBox.critical(self, "导出错误", str(e))
-        finally:
+            QMessageBox.critical(self, "导出错误", "无法导出，请关闭‘交易记录.xlsx’文件后再试！")
             self.btn_export.setEnabled(True)
-    
+        except Exception as e:
+            QMessageBox.critical(self, "导出错误", f"导出失败: {str(e)}")
+            self.btn_export.setEnabled(True)
+
     def calculate_revenue(self):
         with sqlite3.connect('shop_system.db') as conn:
             cursor = conn.cursor()
@@ -957,7 +933,7 @@ class MainWindow(QMainWindow):
                 FROM transactions 
                 WHERE type = 'topup'
             """)
-            total_topup = cursor.fetchone()[0] or 0.0  # 如果没有记录，返回 0.0
+            total_topup = cursor.fetchone()[0] or 0.0
             
             # 计算所有用户的消费总额
             cursor.execute("""
@@ -965,22 +941,21 @@ class MainWindow(QMainWindow):
                 FROM transactions 
                 WHERE type = 'consumption'
             """)
-            total_consumption = cursor.fetchone()[0] or 0.0  # 如果没有记录，返回 0.0
+            total_consumption = cursor.fetchone()[0] or 0.0
             
             # 计算所有用户的余额总和
-            cursor.execute("SELECT COUNT(*) FROM users WHERE id != 1")  # 明确排除 id=1
-            total_balance = cursor.fetchone()[0] or 0.0  # 如果没有记录，返回 0.0
+            cursor.execute("SELECT SUM(balance) FROM users WHERE id != 1")
+            total_balance = cursor.fetchone()[0] or 0.0
 
-            # 新增：统计用户数量
+            # 统计用户数量
             cursor.execute("SELECT COUNT(*) FROM users WHERE id != 1")
-            user_count = cursor.fetchone()[0] or 0  # 如果没有用户，返回 0
+            user_count = cursor.fetchone()[0] or 0
 
-        return total_topup, total_consumption, total_balance,user_count
+        return total_topup, total_consumption, total_balance, user_count
     
     def show_revenue(self):
-        total_topup, total_consumption, total_balance,user_count = self.calculate_revenue()
+        total_topup, total_consumption, total_balance, user_count = self.calculate_revenue()
         
-        # 创建弹窗
         revenue_dialog = QMessageBox(self)
         revenue_dialog.setWindowTitle("营收情况")
         revenue_dialog.setText(
@@ -994,11 +969,11 @@ class MainWindow(QMainWindow):
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
-    init_db()  # 初始化数据库（仅在需要时创建表）
+    init_db()
     login = LoginWindow()
     if login.exec_() == QDialog.Accepted:
         window = MainWindow()
-        window.resize(1250, 1300)  # 设置初始大小
+        window.resize(1250, 1300)
         window.show()
         sys.exit(app.exec_())
     else:
